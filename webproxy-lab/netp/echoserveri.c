@@ -1,93 +1,71 @@
 #include "csapp.h"
-void *svr_thread_func(void *vargp);
-void echo(int connfd);
+
+void *svr_thread_func(void *vargp); // 스레드가 실행할 함수
+void echo(int connfd);              // 클라이언트 요청을 처리하는 함수
 
 int main(int argc, char **argv)
 {
-    int listenfd; // 변수 선언 리슨fd , 연결 fd
-    int *connfd;  // int 포안터형
+    int listenfd;     // 클라이언트 연결을 대기할 리슨 소켓
+    int *connfd;      // 클라이언트 연결이 성립된 후 사용할 데이터 송수신용 소켓
     socklen_t clientlen;
-    struct sockaddr_storage clientaddr;
-    // socklen_t clientlen; // 정수 변수
-    // // struct sockaddr_storage clientaddr;                  /* Enough space for any address */
-    // char client_hostname[MAXLINE], client_port[MAXLINE]; // argv로 받아오는 ip, port 정보
-
-    pthread_t tid;
+    struct sockaddr_storage clientaddr; // 클라이언트 주소 정보 저장
+    pthread_t tid;       // 스레드 ID
 
     if (argc != 2)
     {
-        fprintf(stderr, "usage: %s <port>\n", argv[0]); // 프린트하는 함수인데 stderr-2 에 printf함수안에 있는 정보를 전달?
-        exit(0);                                        // 종료
+        fprintf(stderr, "usage: %s <port>\n", argv[0]); // 인자 부족 시 사용법 출력
+        exit(0);
     }
 
-    listenfd = Open_listenfd(argv[1]); // 잘되면은 소켓이 생성되고 bind()함수도 동작해서 listenfd의 fd_no가 반환됨. 아니면은 소켓이 열리다가 close 함수로 닫힘
+    listenfd = Open_listenfd(argv[1]); // 소켓 생성 + 바인드 + listen 까지 완료
     while (1)
     {
-        connfd = (int *)malloc(sizeof(int));
-        printf("연결 전");
-        *connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen); // listenfd라는 별도의 fd를 만들어서 socketaddr 구조체로 만들고,
-        printf("연결 후");
-        pthread_create(&tid, NULL, svr_thread_func, connfd);
+        connfd = (int *)malloc(sizeof(int)); // 각 스레드가 사용할 connfd를 동적 할당
+        clientlen = sizeof(struct sockaddr_storage);
+        printf("연결 전\n");
+        *connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen); // 연결 요청 수락
+        printf("연결 후\n");
+        pthread_create(&tid, NULL, svr_thread_func, connfd); // 스레드 생성 후 연결 fd 전달
     }
 }
 void *svr_thread_func(void *vargp)
 {
-    int connfd = *((int *)vargp);
+    int connfd = *((int *)vargp); // 전달받은 fd 복사
+    free(vargp);                  // 동적 할당 해제
+    Pthread_detach(pthread_self()); // 스레드 종료 시 자동 자원 회수
 
-    free(vargp);
-    Pthread_detach(pthread_self());
+    // 클라이언트 주소 확인용 변수 선언
+    socklen_t clientlen = sizeof(struct sockaddr_storage);
+    struct sockaddr_storage clientaddr;
+    char client_hostname[MAXLINE], client_port[MAXLINE];
 
-    socklen_t clientlen = sizeof(struct sockaddr_storage); // 128byte 크기의 구조체를 가진 sockaddr_storage 이녀석의 크기를 변수에 저장
-
-    struct sockaddr_storage clientaddr;                  /* Enough space for any address */
-    char client_hostname[MAXLINE], client_port[MAXLINE]; // argv로 받아오는 ip, port 정보
-
-    getpeername(connfd, (SA *)&clientaddr, &clientlen);
-    Getnameinfo((SA *)&clientaddr, clientlen, // 구조체 타입을 문자열 타입으로 변환 후 변수들에 저장.
+    getpeername(connfd, (SA *)&clientaddr, &clientlen); // 연결된 소켓의 상대 주소 확인
+    Getnameinfo((SA *)&clientaddr, clientlen,
                 client_hostname, MAXLINE,
-                client_port, MAXLINE, 0);
+                client_port, MAXLINE, 0); // 문자열로 변환
 
-    printf("Connected to (%s, %s)\n", client_hostname, client_port);
-    echo(connfd);
-    Close(connfd);
+    printf("Connected to (%s, %s)\n", client_hostname, client_port); // 접속 정보 출력
+    echo(connfd);    // 데이터 송수신 처리
+    Close(connfd);   // 소켓 닫기
     return NULL;
 }
 /*
-# listen 단계
-client   --- connect() --->  [ server: listenfd 대기 상태 ]
+✅ 핵심 동작 요약
+단계	설명
+1️⃣	listenfd를 만들어 서버는 연결 요청 대기 상태에 진입
+2️⃣	클라이언트 연결 요청 시, accept()가 새로운 연결 fd(connfd) 생성
+3️⃣	connfd는 새로운 스레드에 인자로 전달됨
+4️⃣	스레드에서는 getpeername()과 Getnameinfo()로 클라이언트 정보 출력
+5️⃣	echo(connfd)를 통해 통신 처리 후, Close(connfd)로 종료
+6️⃣	pthread_detach()로 스레드는 종료 시 자원 자동 회수
 
-# accept 시점
-client   <---> [ server: connfd 생성 후 read/write 시작 ]
-
-
-socket() 함수가 소켓을 만들고, getaddrinfo()는 단지 주소 정보 제공자 역할하는 함수
-
-
-getaddrinfo():
-IP 주소, 포트 번호, 소켓 타입, 프로토콜 등을 포함한 addrinfo 구조체를 만들어 줌.
-이 구조체는 이후 socket(), bind(), connect() 등에 활용됨.
-
-socket():
-커널 내부에서 새로운 소켓(파일 디스크립터)을 생성.
-이 시점에서 진짜로 fd (파일 디스크립터) 가 생깁니다. 예: int sockfd = socket(...);
-
-bind():
-소켓을 특정 IP 주소 + 포트에 바인딩.
-bind(sockfd, addrinfo->ai_addr, addrinfo->ai_addrlen);
-
-listen():
-서버 소켓을 “리스닝 상태”로 변경 (수동 모드로).
-커널 내부 큐(backlog)를 만들어서 클라이언트 연결 요청을 대기시킴.
-
-
-
-accept()
-클라이언트의 연결 요청을 수락하고, 새로운 연결용 소켓(fd) 를 리턴합니다.
-
-accept()를 호출하면:
-연결 요청 큐에서 하나 꺼냄
-커널이 내부적으로 새로운 연결 전용 소켓을 생성 (새 fd 할당)
-이 fd(connfd)를 리턴
-connfd는 서버와 클라이언트 사이의 실제 데이터 통신 전용 fd가 됨.
-echo(connfd)는 read/write 혹은 Rio 버퍼 I/O로 데이터를 처리.
+✅ 주요 함수 설명
+함수	역할
+Open_listenfd()	서버 리슨 소켓 생성 및 리턴 (socket → bind → listen)
+Accept()	클라이언트 연결 수락, 새 fd 반환
+pthread_create()	클라이언트 처리용 스레드 생성
+pthread_detach()	스레드 종료 후 자원 자동 반환 (join 불필요)
+getpeername()	연결된 상대(클라이언트)의 주소 정보 조회
+Getnameinfo()	클라이언트 주소를 문자열로 변환
+echo()	클라이언트 요청 처리 루틴 (보낸 메시지를 그대로 다시 보냄)
 */

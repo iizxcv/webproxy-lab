@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "types.h": "c",
+        "csapp.h": "c",
+        "stat.h": "c",
+        "signal.h": "c",
+        "struct_timespec.h": "c",
+        "sigaction.h": "c",
+        "features.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "disabled"
+}

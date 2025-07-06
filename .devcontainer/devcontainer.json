@@ -1,21 +1,31 @@
 {
-    "name": "Proxylab Development Container",
-    "dockerFile": "Dockerfile",
-    "remoteUser": "jungle",
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-vscode.cpptools-extension-pack",
-                "ms-vscode.cpptools"
-            ],
-            "settings": {
-                "terminal.integrated.defaultProfile.linux": "bash",
-                "C_Cpp.default.includePath": [
-                    "/usr/include",
-                    "/usr/local/include"
-                ],
-                "C_Cpp.default.compilerPath": "/usr/bin/gcc"
-            }
-        }
+  "name": "Proxylab Development Container",
+  "dockerFile": "Dockerfile",
+  "remoteUser": "jungle",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "C_Cpp.default.configurationProvider": "ms-vscode.cpptools",
+        "C_Cpp.intelliSenseEngine": "default",
+        "C_Cpp.default.compilerPath": "/usr/bin/gcc",
+        "C_Cpp.default.includePath": [
+          "${workspaceFolder}/**",
+          "/usr/include",
+          "/usr/local/include",
+          "/usr/include/x86_64-linux-gnu"
+        ]
+      }
     }
+  },
+  "features": {},
+  "mounts": [],
+  "forwardPorts": [8090],
+  "runArgs": ["-p", "8090:8090"],
+  "postCreateCommand": "echo '[*] Container ready.'",
+  "remoteEnv": {}
 }

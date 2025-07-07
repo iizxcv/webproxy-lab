@@ -24,8 +24,8 @@
   },
   "features": {},
   "mounts": [],
-  "forwardPorts": [8090],
-  "runArgs": ["-p", "8090:8090"],
+  "forwardPorts": [8000],
+  "runArgs": ["-p", "8000:8000"],
   "postCreateCommand": "echo '[*] Container ready.'",
   "remoteEnv": {}
 }

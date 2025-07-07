@@ -48,11 +48,13 @@ int main(int argc, char **argv)
 void doit(int fd)
 {
   int is_static;
-  struct stat sbuf;
+  struct stat sbuf, vbuf;
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
   char head_buf[MAXLINE] = ""; // 헤더 echo용
   char filename[MAXLINE], cgiargs[MAXLINE];
   rio_t rio;
+
+  char videofile[MAXLINE] = "US.mp4";
 
   /* Read request line and headers */
   Rio_readinitb(&rio, fd);           // fd를 rio에 매핑되게 초기화
@@ -92,8 +94,14 @@ void doit(int fd)
       return;
     }
 
-    // serve_static(fd, filename, sbuf.st_size);
-    serve_echo(fd, &head_buf);
+      serve_static(fd, filename, sbuf.st_size);
+
+
+
+
+    // stat(videofile, &vbuf);
+    // serve_static_video(fd,videofile, vbuf.st_size);
+    // serve_echo(fd, &head_buf); 11.6 ABCD완
   }
   else
   { /* Serve dynamic content */ // 나중에 GCI? 할때 수정할 부분
@@ -183,7 +191,7 @@ void serve_static(int fd, char *filename, int filesize)
 
   /* Send response headers to client */
   get_filetype(filename, filetype);
-  sprintf(buf, "HTTP/1.0 200 OK\r\n");
+  sprintf(buf, "HTTP/1.1 200 OK\r\n");
   sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
   sprintf(buf, "%sConnection: close\r\n", buf);
   sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
@@ -204,13 +212,43 @@ void serve_static(int fd, char *filename, int filesize)
   Munmap(srcp, filesize);
 }
 
+// void serve_static_video(int fd, char *filename, int filesize)
+// {
+//   int srcfd;
+//   char *srcp, filetype[MAXLINE], buf[MAXBUF];
+
+//   /* Send response headers to client */
+//   get_filetype(filename, filetype);
+//   sprintf(buf, "HTTP/1.0 200 OK\r\n");
+//   sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
+//   sprintf(buf, "%sConnection: close\r\n", buf);
+//   sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
+//   sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
+//   Rio_writen(fd, buf, strlen(buf));
+
+//   printf("Response headers:\n");
+//   printf("%s", buf);
+
+//   /* Send response body to client */
+//   // char video_path[MAXLINE];
+//   // sprintf(video_path, "./video/%s", filename); // 폴더 안에 있는 경로 가져오기
+//   srcfd = Open(filename, O_RDONLY, 0); // 파일을 메모리에 올리고 그 디스크립터 idx 번호
+//   srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); // file 정보를 메모리에 저장.
+//   // printf("==========Fix That debug================\n");
+
+//   Close(srcfd);
+//   // Rio_writen(fd,head_buf,strlen(head_buf));
+//   Rio_writen(fd, srcp, filesize);
+//   Munmap(srcp, filesize);
+// }
+
 void serve_echo(int fd, char *head_buf)
 {
   char buf[MAXBUF];
 
   /* Send response headers to client */
 
-  sprintf(buf, "HTTP/1.0 200 OK\r\n");
+  sprintf(buf, "HTTP/1.2 200 OK\r\n");
   sprintf(buf + strlen(buf), "Server: Tiny Web Server\r\n");
   sprintf(buf + strlen(buf), "Content-type: text/html\r\n\r\n");
   Rio_writen(fd, buf, strlen(buf));
@@ -227,7 +265,6 @@ void serve_echo(int fd, char *head_buf)
   Rio_writen(fd, buf, strlen(buf));
 }
 
-
 /*
  * get_filetype - Derive file type from filename
  */
@@ -241,6 +278,8 @@ void get_filetype(char *filename, char *filetype)
     strcpy(filetype, "image/png");
   else if (strstr(filename, ".jpg"))
     strcpy(filetype, "image/jpeg");
+  else if (strstr(filename, ".mp4"))
+    strcpy(filetype, "video/mp4");
   else
     strcpy(filetype, "text/plain");
 }

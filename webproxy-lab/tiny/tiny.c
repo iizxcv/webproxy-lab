@@ -21,12 +21,13 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
 void sigchld_handler(int sig)
 {
   pid_t f_pid;
-  while (f_pid = waitpid(-1, NULL, WNOHANG) > 0);
-     /* 파라메터 설명
-        -1 : PID 가 오게되며 -1의 의미는 먼저 들어온 프로세서의 pid를 뜻함
-        성공하면 PID를 반환하고 죽은 자식의 상태를 STAT_LOC에 저장 - 지금은 NULL이니 상태가 어떻든 저장되는 값 없음.
-       optional 자리에 WNOHANG로 설정되어 있을 때 , 자식이 죽지 않았다면 return 0;
-    */
+  while (f_pid = waitpid(-1, NULL, WNOHANG) > 0)
+    ;
+  /* 파라메터 설명
+     -1 : PID 가 오게되며 -1의 의미는 먼저 들어온 프로세서의 pid를 뜻함
+     성공하면 PID를 반환하고 죽은 자식의 상태를 STAT_LOC에 저장 - 지금은 NULL이니 상태가 어떻든 저장되는 값 없음.
+    optional 자리에 WNOHANG로 설정되어 있을 때 , 자식이 죽지 않았다면 return 0;
+ */
 }
 
 int main(int argc, char **argv)
@@ -221,13 +222,16 @@ void serve_static(int fd, char *filename, int filesize)
 
   /* Send response body to client */
   srcfd = Open(filename, O_RDONLY, 0);
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); // file 정보를 메모리에 저장.
+  //srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); // file 정보를 메모리에 저장.
+  srcp = (char *)malloc(filesize);
+  rio_readn(srcfd,srcp,filesize);
   // printf("==========Fix That debug================\n");
 
   Close(srcfd);
   // Rio_writen(fd,head_buf,strlen(head_buf));
   Rio_writen(fd, srcp, filesize);
-  Munmap(srcp, filesize);
+  //Munmap(srcp, filesize);
+  free(srcp);
 }
 
 // void serve_static_video(int fd, char *filename, int filesize)
@@ -332,6 +336,6 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
   예외 처리는 따로 해줘야함.
 
   한줄요약: 비동기 진행 시, 부모 프로세스가 종료된 자식 프로세스를 수거(reap)하여 좀비 프로세스가 생기지 않도록 처리하기 위함.
-  
+
   */
 }

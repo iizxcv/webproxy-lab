@@ -17,8 +17,22 @@ void serve_dynamic(int fd, char *filename, char *cgiargs);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
 
+/* Non-blocking operation 자식 프로세서 종료 시 시그널 받아서 */
+void sigchld_handler(int sig)
+{
+  pid_t f_pid;
+  while (f_pid = waitpid(-1, NULL, WNOHANG) > 0);
+     /* 파라메터 설명
+        -1 : PID 가 오게되며 -1의 의미는 먼저 들어온 프로세서의 pid를 뜻함
+        성공하면 PID를 반환하고 죽은 자식의 상태를 STAT_LOC에 저장 - 지금은 NULL이니 상태가 어떻든 저장되는 값 없음.
+       optional 자리에 WNOHANG로 설정되어 있을 때 , 자식이 죽지 않았다면 return 0;
+    */
+}
+
 int main(int argc, char **argv)
 {
+  signal(SIGCHLD, sigchld_handler);
+
   int listenfd, connfd;
   char hostname[MAXLINE], port[MAXLINE];
   socklen_t clientlen;
@@ -34,6 +48,9 @@ int main(int argc, char **argv)
   listenfd = Open_listenfd(argv[1]);
   while (1)
   {
+
+    // signal(SIGCHLD, close);
+
     clientlen = sizeof(clientaddr);
     connfd = Accept(listenfd, (SA *)&clientaddr,
                     &clientlen); // line:netp:tiny:accept
@@ -48,7 +65,7 @@ int main(int argc, char **argv)
 void doit(int fd)
 {
   int is_static;
-  struct stat sbuf, vbuf;
+  struct stat sbuf;
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
   char head_buf[MAXLINE] = ""; // 헤더 echo용
   char filename[MAXLINE], cgiargs[MAXLINE];
@@ -80,8 +97,12 @@ void doit(int fd)
   is_static = parse_uri(uri, filename, cgiargs);
   if (stat(filename, &sbuf) < 0)
   {
+    // printf("========================\n");
+    // printf("DEBUG:: 파일 이름: %s", filename);
+    // printf("========================\n");
     clienterror(fd, filename, "404", "Not found",
                 "Tiny couldn't find this file");
+
     return;
   }
 
@@ -94,10 +115,7 @@ void doit(int fd)
       return;
     }
 
-      serve_static(fd, filename, sbuf.st_size);
-
-
-
+    serve_static(fd, filename, sbuf.st_size);
 
     // stat(videofile, &vbuf);
     // serve_static_video(fd,videofile, vbuf.st_size);
@@ -299,9 +317,21 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
     /* Real server would set all CGI vars here */
     setenv("QUERY_STRING", cgiargs, 1);
     Dup2(fd, STDOUT_FILENO);              /* Redirect stdout to client */
+    sleep(10);                            // 수면 걸어버리면 부모도 아무고토 못하는 상태.
     Execve(filename, emptylist, environ); /* Run CGI program */
   }
   // waitpid + sigchild 활용
 
-  Wait(NULL); /* Parent waits for and reaps child */
+  // Wait(NULL); /* Parent waits for and reaps child */
+  /*자식들이 종료하는 것을 무지성으로 기다리지 않고,
+  SIGCHLD 핸들러 선언 후 자식이 종료 되면 핸들러 함수에서 자식 프로세서 정상 종료 시
+  할당된 리소스 수거를 위함.
+  ps -ef | grep defunct 로 좀비 프로세서 확인 가능.
+
+
+  예외 처리는 따로 해줘야함.
+
+  한줄요약: 비동기 진행 시, 부모 프로세스가 종료된 자식 프로세스를 수거(reap)하여 좀비 프로세스가 생기지 않도록 처리하기 위함.
+  
+  */
 }

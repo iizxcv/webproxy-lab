@@ -29,10 +29,10 @@ int main(int argc, char **argv)
 */
     {
         Rio_writen(clientfd, buf, strlen(buf)); // 사용자 입력을 서버로 전송
-        printf("아아 Rio_writen이 실행되었쥬ㅕㅕㅕㅕㅑㅑㅑㅑㅑ");
+        //printf("아아 Rio_writen이 실행되었쥬ㅕㅕㅕㅕㅑㅑㅑㅑㅑ");
         Rio_readlineb(&rio, buf, MAXLINE);      // 서버 응답 한 줄을 읽어옴.
         // 별도의 timeout값이 없으면 서버가 보낼때까지 무한대기
-        printf("아아 Rio_readlinb 실행되었져ㅕㅕㅕㅕㅑㅑㅑㅑㅑ");
+       // printf("아아 Rio_readlinb 실행되었져ㅕㅕㅕㅕㅑㅑㅑㅑㅑ");
         Fputs(buf, stdout);                     // 응답을 콘솔에 출력
     }
 

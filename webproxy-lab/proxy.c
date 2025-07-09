@@ -10,6 +10,7 @@ void get_filetype(char *filename, char *filetype);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
 void sigchld_handler(int sig);
+void *svr_thread_func(void *vargp);
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
@@ -25,8 +26,10 @@ int main(int argc, char **argv)
 
   signal(SIGCHLD, sigchld_handler);
   pid_t pid;
-  int listenfd, connfd;
-  char hostname[MAXLINE], port[MAXLINE];
+  int listenfd;
+  int *connfd = (int *)malloc(sizeof(int));
+
+  pthread_t tid;
 
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
@@ -42,15 +45,15 @@ int main(int argc, char **argv)
   {
 
     clientlen = sizeof(clientaddr);
-    connfd = Accept(listenfd, (SA *)&clientaddr,
-                    &clientlen); // line:netp:tiny:accept
-    Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
-                0);
-    printf("Accepted connection from (%s, %s)\n", hostname, port);
-    if(pid=fork() == 0){
-    doit(connfd);  // line:netp:tiny:doit
-    Close(connfd); // line:netp:tiny:close
-    }
+    *connfd = Accept(listenfd, (SA *)&clientaddr,&clientlen); // line:netp:tiny:accept
+    // Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
+    //             0);
+    // printf("Accepted connection from (%s, %s)\n", hostname, port);
+    // if(pid=fork() == 0){
+    // doit(connfd);  // line:netp:tiny:doit
+    // Close(connfd); // line:netp:tiny:close
+    // }
+    pthread_create(&tid, NULL, svr_thread_func, connfd); // 스레드 생성 후 연결 fd 전달
   }
   return 0;
 }
@@ -105,8 +108,8 @@ void read_requesthdrs_proxy(rio_t *rp, char *head_buf) // rp는 fd 정보를 가
     {
       // memset(buf, 0,sizeof(buf)); //  memset(buf, 0,strlen(buf));
       sprintf(head_buf + strlen(head_buf), "User-Agent: %s\r\n", user_agent_hdr);
-      //printf("===========%s==========\n",head_buf);
-            // strcat(head_buf,user_agent_hdr);
+      // printf("===========%s==========\n",head_buf);
+      //  strcat(head_buf,user_agent_hdr);
       // printf("===========\n%s==========\n",head_buf);
     }
     else if (strstr(buf, "Proxy-Connection:"))
@@ -117,9 +120,8 @@ void read_requesthdrs_proxy(rio_t *rp, char *head_buf) // rp는 fd 정보를 가
     {
       strcat(head_buf, buf); // heaf_buf에 rp 값 한줄 씩 추가
     }
-
   }
-  printf("%s", head_buf); 
+  printf("%s", head_buf);
   return;
 }
 void clienterror(int fd, char *cause, char *errnum,
@@ -129,7 +131,7 @@ void clienterror(int fd, char *cause, char *errnum,
 
   /* Build the HTTP response body */
   sprintf(body, "<html><title>Tiny Error</title>");
-  sprintf(body, "%s<body bgcolor=""ffffff"">\r\n", body);
+  sprintf(body, "%s<body bgcolor=""ffffff"">\r\n",body);
   sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg);
   sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
   sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
@@ -176,21 +178,44 @@ void request_to_real_server(int proxy_fd, char *proxy_buf, char *to_hostname, ch
   clientfd = Open_clientfd(to_hostname, to_port); // 서버에 연결 요청, 성공 시 소켓 fd 반환
   Rio_readinitb(&rio, clientfd);                  // rio 버퍼 초기화 (clientfd를 기반으로 robust I/O 사용)
 
-
-  Rio_writen(clientfd, proxy_buf, strlen(proxy_buf));// 사용자 입력을 서버로 전송
+  Rio_writen(clientfd, proxy_buf, strlen(proxy_buf)); // 사용자 입력을 서버로 전송
 
   // Rio_readlineb(&rio, buf, MAXLINE); // 서버 응답 한 줄을 읽어옴.
   // printf("\n==%s==\n", buf);             // 응답을 콘솔에 출력
   // Rio_readlineb(&rio, buf, MAXLINE); // 서버 응답 한 줄을 읽어옴.
   // printf("==%s==\n", buf);             // 응답을 콘솔에 출력
 
-  while ( Rio_readlineb(&rio, buf, MAXLINE) > 0)
+  while (Rio_readlineb(&rio, buf, MAXLINE) > 0)
   {
-   
+    if (strstr(buf, "Content-type:"))
+    {
+      strcat(buf, "Connection: Keep-Alive\r\n");
+    }
+
     Rio_writen(proxy_fd, buf, strlen(buf));
     printf("%s", buf);
   }
 
   Close(clientfd); // 소켓 닫기 (커널 리소스 해제)
   exit(0);
+}
+
+void *svr_thread_func(void *vargp)
+{
+  int connfd = *((int *)vargp); // 전달받은 fd 복사
+  char hostname[MAXLINE], port[MAXLINE];
+
+  free(vargp);                    // 동적 할당 해제
+  Pthread_detach(pthread_self()); // 스레드 종료 시 자동 자원 회수
+
+  // socklen_t clientlen = sizeof(struct sockaddr_storage);
+  socklen_t clientlen = 0;
+  struct sockaddr_storage clientaddr;
+
+  getpeername(connfd, (SA *)&clientaddr, &clientlen); // 연결된 소켓의 상대 주소 확인
+  getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
+              0);
+  printf("Accepted connection from (%s, %s)\n", hostname, port);
+  doit(connfd);
+  close(connfd);
 }

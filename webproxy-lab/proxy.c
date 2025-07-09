@@ -25,9 +25,9 @@ int main(int argc, char **argv)
   printf("%s", user_agent_hdr);
 
   signal(SIGCHLD, sigchld_handler);
+  signal(SIGPIPE, SIG_IGN);
   pid_t pid;
   int listenfd;
-  int *connfd = (int *)malloc(sizeof(int));
 
   pthread_t tid;
 
@@ -43,9 +43,9 @@ int main(int argc, char **argv)
   listenfd = Open_listenfd(argv[1]);
   while (1)
   {
-
+    int *connfdp = (int *)malloc(sizeof(int));
     clientlen = sizeof(clientaddr);
-    *connfd = Accept(listenfd, (SA *)&clientaddr,&clientlen); // line:netp:tiny:accept
+    *connfdp = Accept(listenfd, (SA *)&clientaddr, &clientlen); // line:netp:tiny:accept
     // Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
     //             0);
     // printf("Accepted connection from (%s, %s)\n", hostname, port);
@@ -53,7 +53,7 @@ int main(int argc, char **argv)
     // doit(connfd);  // line:netp:tiny:doit
     // Close(connfd); // line:netp:tiny:close
     // }
-    pthread_create(&tid, NULL, svr_thread_func, connfd); // 스레드 생성 후 연결 fd 전달
+    pthread_create(&tid, NULL, svr_thread_func, connfdp); // 스레드 생성 후 연결 fd 전달
   }
   return 0;
 }
@@ -107,10 +107,25 @@ void read_requesthdrs_proxy(rio_t *rp, char *head_buf) // rp는 fd 정보를 가
     if (strstr(buf, "User-Agent:"))
     {
       // memset(buf, 0,sizeof(buf)); //  memset(buf, 0,strlen(buf));
-      sprintf(head_buf + strlen(head_buf), "User-Agent: %s\r\n", user_agent_hdr);
+      // sprintf(head_buf + strlen(head_buf), "User-Agent: %s\r\n", user_agent_hdr);
+      // sprintf(head_buf + strlen(head_buf), "%s", user_agent_hdr);
+      strcat(head_buf, user_agent_hdr);
       // printf("===========%s==========\n",head_buf);
       //  strcat(head_buf,user_agent_hdr);
       // printf("===========\n%s==========\n",head_buf);
+    }
+
+    //   else if (!strstr(buf, "Host:")) {
+    //   sprintf(head_buf + strlen(head_buf), "Host: %s:%s\r\n", to_hostname, to_port);
+    // }
+
+    else if (strstr(buf, "Content-type:"))
+    {
+      strcat(buf, "Connection: Keep-Alive\r\n");
+    }
+    else if (strstr(buf, "Connection:"))
+    {
+      continue;
     }
     else if (strstr(buf, "Proxy-Connection:"))
     {
@@ -121,6 +136,10 @@ void read_requesthdrs_proxy(rio_t *rp, char *head_buf) // rp는 fd 정보를 가
       strcat(head_buf, buf); // heaf_buf에 rp 값 한줄 씩 추가
     }
   }
+  sprintf(head_buf + strlen(head_buf), "Connection: close\r\n");
+  sprintf(head_buf + strlen(head_buf), "Proxy-Connection: close\r\n");
+  strcat(head_buf, "\r\n");
+
   printf("%s", head_buf);
   return;
 }
@@ -131,7 +150,10 @@ void clienterror(int fd, char *cause, char *errnum,
 
   /* Build the HTTP response body */
   sprintf(body, "<html><title>Tiny Error</title>");
-  sprintf(body, "%s<body bgcolor=""ffffff"">\r\n",body);
+  sprintf(body, "%s<body bgcolor="
+                "ffffff"
+                ">\r\n",
+          body);
   sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg);
   sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
   sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
@@ -162,7 +184,11 @@ void make_proxy_data(char *uri, char *to_hostname, char *to_port)
 { // GET http://localhost:7000/ HTTP/1.1
   char protocol[MAXLINE], path[MAXLINE];
   sscanf(uri, "%[^:]://%[^:]:%[^/]%s", protocol, to_hostname, to_port, path);
-  sprintf(uri, path);
+  // sprintf(uri, "/%s",path);
+  if (strlen(path) == 0)
+    strcpy(uri, "/");
+  else
+    sprintf(uri, "/%s", path);
   // printf("=================================\n");
   // printf("%s:::%s:::%s \n",to_hostname,to_port,uri); localhost:::7000:::/
   // printf("=================================\n");
@@ -184,20 +210,38 @@ void request_to_real_server(int proxy_fd, char *proxy_buf, char *to_hostname, ch
   // printf("\n==%s==\n", buf);             // 응답을 콘솔에 출력
   // Rio_readlineb(&rio, buf, MAXLINE); // 서버 응답 한 줄을 읽어옴.
   // printf("==%s==\n", buf);             // 응답을 콘솔에 출력
+  int content_length = -1;
 
   while (Rio_readlineb(&rio, buf, MAXLINE) > 0)
   {
-    if (strstr(buf, "Content-type:"))
-    {
-      strcat(buf, "Connection: Keep-Alive\r\n");
-    }
-
     Rio_writen(proxy_fd, buf, strlen(buf));
     printf("%s", buf);
+
+    if (strstr(buf, "Content-length"))
+    {
+      char *p = strchr(buf,':');
+      content_length = atoi(p+1);
+    }
+    if(strcmp(buf,"\r\n") == 0)
+      break;
   }
+    // printf("%d", content_length);
+
+    int remaining = content_length;
+    while (remaining > 0) {
+
+      int chunksize = remaining < MAXLINE ? remaining : MAXLINE;
+      int n = Rio_readnb(&rio, buf,chunksize);
+      printf("===remaining: %d ======\n", remaining);
+      Rio_writen(proxy_fd,buf,n);
+      remaining =remaining- n;
+
+      if (remaining <= 0) break;
+
+}
 
   Close(clientfd); // 소켓 닫기 (커널 리소스 해제)
-  exit(0);
+  // exit(0);
 }
 
 void *svr_thread_func(void *vargp)
